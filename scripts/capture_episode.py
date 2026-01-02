@@ -1,187 +1,159 @@
 import time
-import json
-from threading import Thread
-from collections import deque
 import os
+from collections import deque
 
 import pywinctl as pwc
 import mss
 import numpy as np
 from PIL import Image
 from pynput import keyboard, mouse
+import json
 
 # -------------------------------
-# Config
+# Config / Top-level shared variables
 # -------------------------------
 BASE_DIR = "data/mining"
-KEY_MAP = {"up": 0, "down": 1, "left": 2}
-BUTTON_MAP = {"left": 0}
-MOUSE_BUCKETS = 20  # 20x20 grid
-IDLE_INTERVAL = 3.0  # seconds per idle frame
+IDLE_INTERVAL = 3.0  # seconds
+
+# Numeric action/key maps
+ACTIONS = {"press": 0, "release": 1, "wait": 2}
+KEYS = {"mouse": 0, "left": 1, "up": 2, "down": 3}
+MOUSE_BUCKETS = 20
+
+# Shared state
+events = deque()
+frame_id = 0
+last_capture_time = 0
+first_action_done = False
+stop_flag = {"stop": False}
+FRAME_DIR = None
+bbox = None
+sct = None
 
 # -------------------------------
 # Helpers
 # -------------------------------
 def get_episode_id(path):
-    episodes = [
-        name for name in os.listdir(path)
-        if os.path.isdir(os.path.join(path, name))
-    ]
-    if len(episodes) == 0:
+    episodes = [name for name in os.listdir(path)
+                if os.path.isdir(os.path.join(path, name))]
+    if not episodes:
         return 1
-    episode_ids = [int(ep[-6:]) for ep in episodes]
-    return max(episode_ids) + 1
-
-def get_time():
-    return time.perf_counter()
+    return max(int(ep[-6:]) for ep in episodes) + 1
 
 def get_window():
-    try:
-        return pwc.getWindowsWithTitle("Old School RuneScape")[0]
-    except IndexError:
-        raise Exception("RuneScape window not found. Make sure it's open.")
+    wins = pwc.getWindowsWithTitle("Old School RuneScape")
+    if not wins:
+        raise RuntimeError("RuneScape window not found")
+    return wins[0]
 
 def get_window_info(win):
     return {"left": win.left, "top": win.top, "width": win.width, "height": win.height}
 
+def convert_bgra_to_rgb(frame):
+    return frame[:, :, :3][:, :, ::-1]
+
 def save_frame(frame, frame_id, frame_dir):
     path = os.path.join(frame_dir, f"frame_{frame_id:06d}.png")
     Image.fromarray(frame).save(path)
-    return path
 
-def convert_bgra_to_rgb(frame):
-    frame = frame[:, :, :3]
-    frame = frame[:, :, ::-1]
-    return frame
+def bucketize(x, y, bbox):
+    bx = int((x - bbox["left"]) / bbox["width"] * MOUSE_BUCKETS)
+    by = int((y - bbox["top"]) / bbox["height"] * MOUSE_BUCKETS)
+    bx = max(0, min(MOUSE_BUCKETS - 1, bx))
+    by = max(0, min(MOUSE_BUCKETS - 1, by))
+    return bx, by
 
-# -------------------------------
-# Action capture with quantization
-# -------------------------------
-def capture_action(get_time_func, actions_deque, move_buffer, frame_queue, window_info):
-    def log_action(time, type_, event, key=None, x=None, y=None):
-        actions_deque.append({
-            "time": time,
-            "type": type_,   # 0=key,1=mouse button,2=mouse move
-            "event": event,  # 0=release,1=press,2=move
-            "key": key,
-            "x": x,
-            "y": y
-        })
+def generate_action(action_type, key=None, x=None, y=None, bbox=None):
+    out = {"a": ACTIONS[action_type]}
+    if key is not None:
+        out["k"] = KEYS[key]
+    if x is not None and y is not None and bbox is not None:
+        bx, by = bucketize(x, y, bbox)
+        out["x"] = bx
+        out["y"] = by
+    return out
 
-    def quantize(x, y):
-        bucket_x = int((x - window_info["left"]) / window_info["width"] * MOUSE_BUCKETS)
-        bucket_y = int((y - window_info["top"]) / window_info["height"] * MOUSE_BUCKETS)
-        bucket_x = max(0, min(MOUSE_BUCKETS - 1, bucket_x))
-        bucket_y = max(0, min(MOUSE_BUCKETS - 1, bucket_y))
-        return bucket_x, bucket_y
-
-    # --- Keyboard ---
-    def on_key_press(k):
-        if hasattr(k, "char"):
-            return
-        if k.name in KEY_MAP:
-            log_action(get_time_func(), 0, 1, key=KEY_MAP[k.name])
-            frame_queue.append(True)
-
-    def on_key_release(k):
-        if hasattr(k, "char"):
-            return
-        if k.name in KEY_MAP:
-            log_action(get_time_func(), 0, 0, key=KEY_MAP[k.name])
-            frame_queue.append(True)
-
-    # --- Mouse ---
-    def on_click(x, y, button, pressed):
-        if button.name in BUTTON_MAP:
-            if move_buffer["time"] is not None:
-                bx, by = quantize(move_buffer["x"], move_buffer["y"])
-                log_action(move_buffer["time"], 2, 2, x=bx, y=by)
-                move_buffer["time"] = None
-            log_action(get_time_func(), 1, int(pressed), key=BUTTON_MAP[button.name])
-            frame_queue.append(True)
-
-    def on_move(x, y):
-        move_buffer["time"] = get_time_func()
-        move_buffer["x"] = x
-        move_buffer["y"] = y
-
-    k_listener = keyboard.Listener(on_press=on_key_press, on_release=on_key_release)
-    m_listener = mouse.Listener(on_click=on_click, on_move=on_move)
-
-    k_listener.start()
-    m_listener.start()
-
-    return k_listener, m_listener
+def capture_frame_and_action(action):
+    """Capture the current frame + append the action to events deque."""
+    global frame_id, last_capture_time, sct
+    img = sct.grab(bbox)
+    frame = convert_bgra_to_rgb(np.array(img))
+    save_frame(frame, frame_id, FRAME_DIR)
+    events.append(action)
+    frame_id += 1
+    last_capture_time = time.perf_counter()
 
 # -------------------------------
-# Frame capture (action + sparse idle)
+# Input handlers
 # -------------------------------
-def capture_frames(frames_deque, frame_dir, bbox, stop_flag, frame_queue):
-    import mss
-    frame_id = 0
-    last_capture_time = 0
-    with mss.mss() as sct:
-        while not stop_flag["stop"]:
-            t = time.perf_counter()
-            # Capture if action occurred or idle interval reached
-            if frame_queue or (t - last_capture_time >= IDLE_INTERVAL):
-                frame_queue.clear()
-                sct_img = sct.grab(bbox)
-                frame = convert_bgra_to_rgb(np.array(sct_img))
-                save_frame(frame, frame_id, frame_dir)
-                frames_deque.append(t)
-                frame_id += 1
-                last_capture_time = t
-            else:
-                time.sleep(0.05)
+def on_key_press(k):
+    global first_action_done
+    if k == keyboard.Key.esc:
+        stop_flag["stop"] = True
+        return False
+    if hasattr(k, "name") and k.name in ["up", "down", "left"]:
+        act = generate_action("press", key=k.name)
+        capture_frame_and_action(act)
+        first_action_done = True
+
+def on_key_release(k):
+    global first_action_done
+    if hasattr(k, "name") and k.name in ["up", "down", "left"]:
+        act = generate_action("release", key=k.name)
+        capture_frame_and_action(act)
+        first_action_done = True
+
+def on_click(x, y, button, pressed):
+    global first_action_done
+    if button.name == "left":
+        act = generate_action(
+            "press" if pressed else "release",
+            key="mouse",
+            x=x, y=y,
+            bbox=bbox
+        )
+        capture_frame_and_action(act)
+        first_action_done = True
 
 # -------------------------------
 # Main
 # -------------------------------
 def main():
+    global FRAME_DIR, bbox, sct, last_capture_time
+
     EPISODE_ID = get_episode_id(BASE_DIR)
-    FRAME_DIR = os.path.join(BASE_DIR, f"episode_{EPISODE_ID:06d}/frames")
-    LOG_FILE = os.path.join(BASE_DIR, f"episode_{EPISODE_ID:06d}/episode_{EPISODE_ID:06d}.json")
+    EP_DIR = os.path.join(BASE_DIR, f"episode_{EPISODE_ID:06d}")
+    FRAME_DIR = os.path.join(EP_DIR, "frames")
+    LOG_FILE = os.path.join(EP_DIR, f"episode_{EPISODE_ID:06d}.json")
     os.makedirs(FRAME_DIR, exist_ok=True)
 
-    frames = deque()
-    actions = deque()
-    move_buffer = {"time": None, "x": None, "y": None}
-    frame_queue = deque()
-
+    # Bring window to front
     win = get_window()
+    win.activate()
+    time.sleep(0.5)
     bbox = get_window_info(win)
-    stop_flag = {"stop": False}
 
-    # Start threads
-    frame_thread = Thread(target=capture_frames, args=(frames, FRAME_DIR, bbox, stop_flag, frame_queue), daemon=True)
-    frame_thread.start()
+    last_capture_time = time.perf_counter()
+    sct = mss.mss()
 
-    k_listener, m_listener = capture_action(get_time, actions, move_buffer, frame_queue, bbox)
+    # Start input listeners
+    keyboard.Listener(on_press=on_key_press, on_release=on_key_release).start()
+    mouse.Listener(on_click=on_click).start()
 
-    print(f"Started episode {EPISODE_ID}. Press Ctrl+C to stop.")
+    print(f"Started episode {EPISODE_ID}. Press ESC to stop.")
 
+    # Idle capture loop
     try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("Stopping capture...")
-        stop_flag["stop"] = True
-        frame_thread.join()
-        k_listener.stop()
-        m_listener.stop()
-
-        # Save log
-        log = {
-            "episode": EPISODE_ID,
-            "bbox": bbox,
-            "frames": list(frames),
-            "actions": list(actions)
-        }
+        while not stop_flag["stop"]:
+            t = time.perf_counter()
+            if first_action_done and t - last_capture_time >= IDLE_INTERVAL:
+                act = generate_action("wait")
+                capture_frame_and_action(act)
+            time.sleep(0.01)
+    finally:
         with open(LOG_FILE, "w") as f:
-            json.dump(log, f, indent=2)
-
-        print(f"Saved {len(frames)} frames and {len(actions)} actions to {LOG_FILE}")
+            json.dump({"events": list(events)}, f, indent=2)
+        print(f"Saved {len(events)} frames to {LOG_FILE}")
 
 if __name__ == "__main__":
     main()
