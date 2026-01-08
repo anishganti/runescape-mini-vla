@@ -23,15 +23,13 @@ class ActionPolicyHead(nn.Module):
         self.head_x = nn.Linear(256,20)
         self.head_y = nn.Linear(256,20)
 
-        self.softmax = nn.Softmax()
-
     def forward(self, x):
         x = self.relu(self.hidden(x))
         
-        output_a = self.softmax(self.head_a(x), dim=1)
-        output_k = self.softmax(self.head_k(x), dim=1)
-        output_x = self.softmax(self.head_x(x), dim=1)
-        output_y = self.softmax(self.head_y(x), dim=1)
+        output_a = self.head_a(x)
+        output_k = self.head_k(x)
+        output_x = self.head_x(x)
+        output_y = self.head_y(x)
 
         return output_a, output_k, output_x, output_y
 
@@ -58,45 +56,65 @@ def load_actions(episode):
         return actions
 
 def encode_actions(actions):
-    encoded_actions = []
-    for action in actions: 
-        action_map = {}
-        
-        if "a" in action: 
-            action_map['a'] = torch.tensor([1 if i = action['a'] else 0 for i in range(3)])
-        if "k" in action: 
-            action_map['k'] = torch.tensor([1 if i = action['k'] else 0 for i in range(3)])
-        if "x" in action: 
-            action_map['x'] = torch.tensor([1 if i = action['x'] else 0 for i in range(20)])
-        if "y" in action: 
-            action_map['y'] = torch.tensor([1 if i = action['y'] else 0 for i in range(20)])
+    a_tensor = []
+    k_tensor = []
+    x_tensor = []
+    y_tensor = []
 
-        encoded_actions.append(action_map)
-    return encoded_actions
+    for action in actions: 
+        a_tensor.append(action['a'])
+        k_tensor.append(action.get('k', -1))
+        x_tensor.append(action.get('x', -1))
+        y_tensor.append(action.get('y', -1))
+
+    a_tensor = torch.tensor(a_tensor)
+    k_tensor = torch.tensor(k_tensor)
+    x_tensor = torch.tensor(x_tensor)
+    y_tensor = torch.tensor(y_tensor)
+
+    return a_tensor, k_tensor, x_tensor, y_tensor
     
 def pool_embeddings(embeddings): 
     return embeddings.mean(dim=1)
 
 def init_model():
     model = ActionPolicyHead()
-    criterion = nn.MSELoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=-1)
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
     return model, criterion, optimizer
 
-def train(loader, model, criterion, loss):
+def save_model(model):
+    torch.save(model.state_dict(), "/Users/anishganti/runescape-mini-vla/models/mlp/checkpoint.pt")
+
+def train(loader, model, criterion, optimizer):
     num_epochs = 30
-
+    total_loss = 0.0
     for epoch in range(num_epochs):
-        outputs = model(X)
-        loss = criterion(outputs, y)
+        model.train()
+        total_loss = 0.0
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        for embedding, action_a, action_k, action_x, action_y in loader:
+            a,k,x,y = model(embedding)
 
+            loss_a = criterion(a, action_a)
+            loss_k = criterion(k, action_k)
+            loss_x = criterion(x, action_x)
+            loss_y = criterion(y, action_y)
+
+            loss = loss_a + loss_k + loss_x + loss_y
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            total_loss += loss.item()
+        
+        avg_loss = total_loss / len(loader)
         if (epoch+1) % 5 == 0:
             print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {loss.item():.4f}')
+
+    return model
 
 def main():
     episodes = get_episodes(base_dir)
@@ -110,22 +128,33 @@ def main():
     for episode in episodes:
 
         actions = load_actions(episode)
-        actions = encode_actions(actions)
-        action_tensors.append(actions[1:])
+        a_tensor, k_tensor, x_tensor, y_tensor = encode_actions(actions)
+        action_a_tensors.append(a_tensor[1:])
+        action_k_tensors.append(k_tensor[1:])
+        action_x_tensors.append(x_tensor[1:])
+        action_y_tensors.append(y_tensor[1:])
 
         embeddings = load_embeddings(episode)
         embeddings = pool_embeddings(embeddings)
-
         embedding_tensors.append(embeddings[:-1])
 
-    action_tensors = torch.cat(action_tensors, dim=0)
+    action_a_tensors = torch.cat(action_a_tensors, dim=0)
+    action_k_tensors = torch.cat(action_k_tensors, dim=0)
+    action_x_tensors = torch.cat(action_x_tensors, dim=0)
+    action_y_tensors = torch.cat(action_y_tensors, dim=0)
     embedding_tensors = torch.cat(embedding_tensors, dim=0)
 
-    dataset = TensorDataset(embedding_tensors, action_tensors)
+    dataset = TensorDataset(
+        embedding_tensors,
+        action_a_tensors,
+        action_k_tensors,
+        action_x_tensors,
+        action_y_tensors
+    )
     loader = DataLoader(dataset, batch_size=16, shuffle=True)
 
     model, criterion, optimizer = init_model()
-
-    train(loader, model, criterion, optimizer)
-
+    model = train(loader, model, criterion, optimizer)
+    save_model(model)
+    
 main()
