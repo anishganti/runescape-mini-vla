@@ -18,23 +18,22 @@ class ActionPolicyHead(nn.Module):
         self.relu = nn.ReLU()
 
         #self.output = nn.Linear(256, 4) -- this will not work because our labels need to output different sets of classes. 
-        self.head1 = nn.Linear(256,3)
-        self.head2 = nn.Linear(256,3)
-        self.head3 = nn.Linear(256,20)
-        self.head4 = nn.Linear(256,20)
+        self.head_a = nn.Linear(256,3)
+        self.head_k = nn.Linear(256,3)
+        self.head_x = nn.Linear(256,20)
+        self.head_y = nn.Linear(256,20)
 
         self.softmax = nn.Softmax()
 
     def forward(self, x):
         x = self.relu(self.hidden(x))
         
-        output1 = self.softmax(self.head1(x), dim=1)
-        output2 = self.softmax(self.head2(x), dim=1)
-        output3 = self.softmax(self.head3(x), dim=1)
-        output4 = self.softmax(self.head4(x), dim=1)
+        output_a = self.softmax(self.head_a(x), dim=1)
+        output_k = self.softmax(self.head_k(x), dim=1)
+        output_x = self.softmax(self.head_x(x), dim=1)
+        output_y = self.softmax(self.head_y(x), dim=1)
 
-        return output1, output2, output3, output4
-
+        return output_a, output_k, output_x, output_y
 
 def get_episodes(path):
     episodes = [
@@ -61,23 +60,19 @@ def load_actions(episode):
 def encode_actions(actions):
     encoded_actions = []
     for action in actions: 
-        a_vec = []
-        k_vec = []
-        x_vec = []
-        y_vec = []
-
+        action_map = {}
+        
         if "a" in action: 
-            action_vec[0] = action['a']
+            action_map['a'] = torch.tensor([1 if i = action['a'] else 0 for i in range(3)])
         if "k" in action: 
-            action_vec[1] = action['k']
+            action_map['k'] = torch.tensor([1 if i = action['k'] else 0 for i in range(3)])
         if "x" in action: 
-            action_vec[2] = action['x']
+            action_map['x'] = torch.tensor([1 if i = action['x'] else 0 for i in range(20)])
         if "y" in action: 
-            action_vec[3] = action['y']
+            action_map['y'] = torch.tensor([1 if i = action['y'] else 0 for i in range(20)])
 
-        encoded_actions.append(action_vec)
-    
-    return torch.tensor(encoded_actions)
+        encoded_actions.append(action_map)
+    return encoded_actions
     
 def pool_embeddings(embeddings): 
     return embeddings.mean(dim=1)
@@ -106,7 +101,10 @@ def train(loader, model, criterion, loss):
 def main():
     episodes = get_episodes(base_dir)
 
-    action_tensors = []
+    action_a_tensors = []
+    action_k_tensors = []
+    action_x_tensors = []
+    action_y_tensors = []
     embedding_tensors = []
 
     for episode in episodes:
