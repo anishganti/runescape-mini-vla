@@ -65,7 +65,8 @@ def embedding_file_exists(episode):
     file_name = f"/Users/anishganti/runescape-mini-vla/notebooks/{episode}_embeddings.pt"
     return os.path.isfile(file_name)
 
-def forward(images, model, processor):
+def process_images(images):
+    processor, model = init_vlm()
     inputs = format_input(images, processor)
     outputs = run_model(inputs, model)
     embeddings = extract_embeddings(outputs)

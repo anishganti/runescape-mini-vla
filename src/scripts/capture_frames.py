@@ -115,10 +115,17 @@ def on_click(x, y, button, pressed):
         capture_frame_and_action(act)
         first_action_done = True
 
-# -------------------------------
-# Main
-# -------------------------------
-def main():
+def capture_frames():
+    win = get_window()
+    win.activate()
+    sct = mss.mss()
+
+    bbox = get_window_info(win)
+    img = sct.grab(bbox)
+    frame = convert_bgra_to_rgb(np.array(img))
+    return frame
+
+def capture_episode():
     global FRAME_DIR, bbox, sct, last_capture_time
 
     EPISODE_ID = get_episode_id(BASE_DIR)

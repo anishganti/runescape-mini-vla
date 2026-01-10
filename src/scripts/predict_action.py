@@ -3,55 +3,28 @@ import torch
 import os
 import numpy as np
 import pywinctl as pwc
-from src.scripts.extract_embeddings import init_vlm, forward
-from src.scripts.train_action_policy_head import ActionPolicyHead, pool_embeddings
-
-def get_window():
-    wins = pwc.getWindowsWithTitle("Old School RuneScape")
-    if not wins:
-        raise RuntimeError("RuneScape window not found")
-    return wins[0]
-
-def get_window_info(win):
-    return {"left": win.left, "top": win.top, "width": win.width, "height": win.height}
-
-def convert_bgra_to_rgb(frame):
-    return frame[:, :, :3][:, :, ::-1]
-
-def capture_frame():
-    win = get_window()
-    win.activate()
-    sct = mss.mss()
-
-    bbox = get_window_info(win)
-    img = sct.grab(bbox)
-    frame = convert_bgra_to_rgb(np.array(img))
-    return frame
+from src.scripts.extract_embeddings import process_images
+from src.scripts.train_action_policy_head import load_model, pool_embeddings
+from src.scripts.capture_frames import capture_frame, get_window
 
 def convert_bucket_to_coord(x,y): 
     MOUSE_BUCKETS = 20
     win = get
 
-def extract_embeddings(frame):
-    processor, model = init_vlm()
-    embeddings = forward([frame], model, processor)
-    return embeddings
-
-def run_action(embeddings):
-    model = ActionPolicyHead()
-    model.load_state_dict(torch.load("/Users/anishganti/runescape_mini_vla/src/models/mlp/checkpoint.pt"))
-    model.eval()   # important
+def predict_action(embeddings):
+    model = load_model()
+    frame = capture_frame()
+    embeddings = process_images(frame)
     embeddings = pool_embeddings(embeddings.cpu())
-    a,k,x,y = model.forward(embeddings)
+    a,k,x,y = model(embeddings)
+    a = a.argmax(dim=1)
+    k = k.argmax(dim=1)
+    x = x.argmax(dim=1)
+    y = y.argmax(dim=1)
     return a,k,x,y
 
-
-frame = capture_frame()
-embeddings = extract_embeddings(frame)
-print(embeddings)
-print(embeddings.shape)
-a,k,x,y = run_action(embeddings)
-print(a.argmax(dim=1))
-print(k.argmax(dim=1))
-print(x.argmax(dim=1))
-print(y.argmax(dim=1))
+def convert_bucket_to_coord(x,y): 
+    MOUSE_BUCKETS = 20
+    win = get_window()
+    bbox = get_window_info(win)
+    return (x * bbox["width"] / MOUSE_BUCKETS + bbox["left"], y * bbox["height"] / MOUSE_BUCKETS + bbox["top"])

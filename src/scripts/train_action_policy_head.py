@@ -84,6 +84,12 @@ def init_model():
 
     return model, criterion, optimizer
 
+def load_model():
+    model = ActionPolicyHead()
+    model.load_state_dict(torch.load("/Users/anishganti/runescape_mini_vla/src/models/mlp/checkpoint.pt"))
+    model.eval()
+    return model
+
 def save_model(model):
     torch.save(model.state_dict(), "/Users/anishganti/runescape_mini_vla/src/models/mlp/checkpoint.pt")
 
