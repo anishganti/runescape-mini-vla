@@ -6,7 +6,7 @@ import time
 import os
 
 DEVICE = "mps" if torch.mps.is_available() else "cpu"
-base_dir = "/Users/anishganti/runescape-mini-vla/data/mining"
+base_dir = "/Users/anishganti/runescape_mini_vla/src/data/mining"
 
 def get_episodes(path):
     episodes = [
@@ -24,7 +24,7 @@ def load_images(episode):
     ]
     return images
 
-def init_model():
+def init_vlm():
     processor = AutoProcessor.from_pretrained("HuggingFaceTB/SmolVLM-256M-Instruct")
     model = AutoModelForImageTextToText.from_pretrained(
         "HuggingFaceTB/SmolVLM-256M-Instruct",
@@ -65,10 +65,15 @@ def embedding_file_exists(episode):
     file_name = f"/Users/anishganti/runescape-mini-vla/notebooks/{episode}_embeddings.pt"
     return os.path.isfile(file_name)
 
+def forward(images, model, processor):
+    inputs = format_input(images, processor)
+    outputs = run_model(inputs, model)
+    embeddings = extract_embeddings(outputs)
+    return embeddings
 
 def main():
     episodes = get_episodes(base_dir)
-    processor, model = init_model()
+    processor, model = init_vlm()
 
     for ep in episodes: 
         if embedding_file_exists(ep):
@@ -81,11 +86,8 @@ def main():
 
         for i in range(0, num_images, batch_size):
             image_batch = images[i:min(num_images, i+batch_size)]
-            inputs = format_input(image_batch, processor)
-            outputs = run_model(inputs, model)
-            embeddings = extract_embeddings(outputs)
+            embeddings = forward(image_batch, model, processor)
             all_embeddings.extend(embeddings.cpu())
 
         torch.save(all_embeddings, f"{base_dir}/{ep}/{ep}_embeddings.pt")
         
-main()

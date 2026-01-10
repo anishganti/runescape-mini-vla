@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 #need to read + tweak MLP #layers #heads + loss function + optimizers
 #then need to change architecture to maybe transformer/diffusion down the road
 
-base_dir = "/Users/anishganti/runescape-mini-vla/data/mining"
+base_dir = "/Users/anishganti/runescape_mini_vla/src/data/mining"
 
 class ActionPolicyHead(nn.Module):
     def __init__(self):
@@ -42,13 +42,13 @@ def get_episodes(path):
     return episodes
 
 def load_embeddings(episode):
-    file_name = f"/Users/anishganti/runescape-mini-vla/data/mining/{episode}/{episode}_embeddings.pt"
+    file_name = f"/Users/anishganti/runescape_mini_vla/src/data/mining/{episode}/{episode}_embeddings.pt"
     embeddings = torch.load(file_name)
     embeddings = torch.stack(embeddings)
     return embeddings
 
 def load_actions(episode):
-    file_name = f"/Users/anishganti/runescape-mini-vla/data/mining/{episode}/{episode}.json"
+    file_name = f"/Users/anishganti/runescape_mini_vla/src/data/mining/{episode}/{episode}.json"
 
     with open(file_name, "r", encoding="utf-8") as file_handle:
         events = json.load(file_handle)
@@ -85,9 +85,10 @@ def init_model():
     return model, criterion, optimizer
 
 def save_model(model):
-    torch.save(model.state_dict(), "/Users/anishganti/runescape-mini-vla/models/mlp/checkpoint.pt")
+    torch.save(model.state_dict(), "/Users/anishganti/runescape_mini_vla/src/models/mlp/checkpoint.pt")
 
 def train(loader, model, criterion, optimizer):
+    print("Training model...")
     num_epochs = 30
     total_loss = 0.0
     for epoch in range(num_epochs):
@@ -156,5 +157,3 @@ def main():
     model, criterion, optimizer = init_model()
     model = train(loader, model, criterion, optimizer)
     save_model(model)
-    
-main()
