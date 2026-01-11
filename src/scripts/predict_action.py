@@ -7,10 +7,6 @@ from src.scripts.extract_embeddings import process_images
 from src.scripts.train_action_policy_head import load_model, pool_embeddings
 from src.scripts.capture_frames import capture_frame, get_window
 
-def convert_bucket_to_coord(x,y): 
-    MOUSE_BUCKETS = 20
-    win = get
-
 def predict_action(embeddings):
     model = load_model()
     frame = capture_frame()

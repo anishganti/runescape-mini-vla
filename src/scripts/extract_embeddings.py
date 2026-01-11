@@ -4,25 +4,11 @@ from transformers import AutoProcessor, AutoModelForImageTextToText
 from transformers.image_utils import load_image
 import time
 import os
+from src.scripts.load_data import get_episodes, load_images, load_embeddings
+
 
 DEVICE = "mps" if torch.mps.is_available() else "cpu"
 base_dir = "/Users/anishganti/runescape_mini_vla/src/data/mining"
-
-def get_episodes(path):
-    episodes = [
-        episode for episode in os.listdir(path)
-        if os.path.isdir(os.path.join(path, episode))
-    ]
-
-    return episodes
-
-def load_images(episode): 
-    images_dir = f"{base_dir}/{episode}/frames"
-    images = [
-        load_image(os.path.join(images_dir, image))
-        for image in sorted(os.listdir(images_dir))
-    ]
-    return images
 
 def init_vlm():
     processor = AutoProcessor.from_pretrained("HuggingFaceTB/SmolVLM-256M-Instruct")

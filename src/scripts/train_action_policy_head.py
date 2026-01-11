@@ -4,12 +4,12 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-
+from src.scripts.load_data import get_episodes, load_actions, load_embeddings
 #current setup is very simple 1 layer MLP + 4 heads with gating logic + cross entropy loss
 #need to read + tweak MLP #layers #heads + loss function + optimizers
 #then need to change architecture to maybe transformer/diffusion down the road
 
-base_dir = "/Users/anishganti/runescape_mini_vla/src/data/mining"
+base_dir = "/Users/anishganti/runescape_mini_vla/data/mining"
 
 class ActionPolicyHead(nn.Module):
     def __init__(self):
@@ -32,28 +32,6 @@ class ActionPolicyHead(nn.Module):
         output_y = self.head_y(x)
 
         return output_a, output_k, output_x, output_y
-
-def get_episodes(path):
-    episodes = [
-        episode for episode in os.listdir(path)
-        if os.path.isdir(os.path.join(path, episode))
-    ]
-    
-    return episodes
-
-def load_embeddings(episode):
-    file_name = f"/Users/anishganti/runescape_mini_vla/src/data/mining/{episode}/{episode}_embeddings.pt"
-    embeddings = torch.load(file_name)
-    embeddings = torch.stack(embeddings)
-    return embeddings
-
-def load_actions(episode):
-    file_name = f"/Users/anishganti/runescape_mini_vla/src/data/mining/{episode}/{episode}.json"
-
-    with open(file_name, "r", encoding="utf-8") as file_handle:
-        events = json.load(file_handle)
-        actions = events['events']        
-        return actions
 
 def encode_actions(actions):
     a_tensor = []

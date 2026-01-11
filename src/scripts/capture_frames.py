@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image
 from pynput import keyboard, mouse
 import json
+from src.scripts.load_data import get_episode_id
 
 # -------------------------------
 # Config / Top-level shared variables
@@ -33,13 +34,6 @@ sct = None
 # -------------------------------
 # Helpers
 # -------------------------------
-def get_episode_id(path):
-    episodes = [name for name in os.listdir(path)
-                if os.path.isdir(os.path.join(path, name))]
-    if not episodes:
-        return 1
-    return max(int(ep[-6:]) for ep in episodes) + 1
-
 def get_window():
     wins = pwc.getWindowsWithTitle("Old School RuneScape")
     if not wins:
