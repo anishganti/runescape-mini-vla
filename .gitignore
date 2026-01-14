@@ -1,2 +1,4 @@
 .venv
 data/
+runs/
+yolov8n.pt
