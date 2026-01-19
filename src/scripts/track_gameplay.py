@@ -13,64 +13,96 @@ TRACKER_TYPE = "CSRT"  # Good for accuracy; MOSSE is faster but less accurate
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-# Initialize video
-cap = cv2.VideoCapture(VIDEO_PATH)
-ok, frame = cap.read()
-if not ok:
-    raise RuntimeError("Cannot read video.")
+def load_video(video_path):
+    cap = cv2.VideoCapture(video_path)
+    return cap
 
-# Select ROIs manually
-bboxes = []
-while True:
-    bbox = cv2.selectROI("Select Ore (press ENTER/SPACE, ESC to finish)", frame, False)
-    if bbox == (0,0,0,0):
-        break
-    bboxes.append(bbox)
+def load_frames(cap, window_size=20): 
+    frames = []
 
-cv2.destroyAllWindows()
+    while True: 
+        ok, frame = cap.read()
+        if not ok: 
+            return ok, frames
 
-# Initialize MultiTracker
-trackers = cv2.legacy.MultiTracker_create()
-for bbox in bboxes:
-    if TRACKER_TYPE == "CSRT":
+        frames.append(frame)
+        if len(frames) == window_size:
+            return ok, frames
+        
+def detect_frames(model, frames, batch_size=4):
+    y_boxes = []
+
+    for i in range(0, len(frames), batch_size)
+        batch = frames[i:i+batch_size]
+        y_boxes.append(model(batch, conf=0.4, iou=0.5, device=0, verbose=False))
+
+    return y_boxes
+
+def track_frames(frames, tracker, idx=0): 
+    tboxes = [None * len(frames)]
+
+    if tracker is None:
+        bboxes, tracker = start_tracking(frames[idx])
+        tboxes[idx] = bboxes
+        idx++
+
+    t_boxes[idx:] = [trackers.update(frame) for frame in frames[idx:]]
+
+    return tracker, t_boxes
+
+def compare_bounding_boxes(t_boxes, y_boxes):
+    pass
+
+def repair_frames(frames, t_boxes, y_boxes, trackers):
+    while True: 
+        statuses = compare_bounding_boxes(t_boxes, y_boxes)
+        fail_idx = validate_frames(statuses)
+
+        if fail_idx is None: 
+            return trackers, t_boxes
+
+        trackers = track_frames(frames, None, fail_idx)        
+
+def annotate_frame(frame):
+    bboxes = []
+    while True:
+        bbox = cv2.selectROI("Select Ore (press ENTER/SPACE, ESC to finish)", frame, False)
+        if bbox == (0,0,0,0):
+            break
+        bboxes.append(bbox)
+
+    cv2.destroyAllWindows()
+    return bboxes
+
+def create_tracker(frame, bboxes):
+    trackers = cv2.legacy.MultiTracker_create()
+    for bbox in bboxes:
         tracker = cv2.legacy.TrackerCSRT_create()
-    elif TRACKER_TYPE == "KCF":
-        tracker = cv2.legacy.TrackerKCF_create()
-    elif TRACKER_TYPE == "MOSSE":
-        tracker = cv2.legacy.TrackerMOSSE_create()
-    else:
-        tracker = cv2.legacy.TrackerCSRT_create()
-    trackers.add(tracker, frame, bbox)
+        trackers.add(tracker, frame, bbox)
+    return trackers
 
-frame_idx = 0
-while True:
-    ok, frame = cap.read()
-    if not ok:
-        break
+def start_tracking(frame): 
+    bboxes = annotate_frame(frame)
+    trackers = create_tracker(frame, bboxes)
+    return bboxes, trackers
 
-    ok, boxes = trackers.update(frame)
+def track_pipeline():
+    # cv2 Video Capture loads video frame-by-frame, so we loop until we run through all the frames
+    trackers = None
+    ok, cap = load_video(VIDEO_PATH)
+    model = YOLO("weights/game_detection.pt")
 
-    # Save YOLO-format labels
-    h, w, _ = frame.shape
-    label_path = os.path.join(OUTPUT_DIR, f"{frame_idx:06d}.txt")
-    with open(label_path, "w") as f:
-        for box in boxes:
-            x, y, bw, bh = box
-            x_center = (x + bw / 2) / w
-            y_center = (y + bh / 2) / h
-            width = bw / w
-            height = bh / h
-            f.write(f"{CLASS_ID} {x_center:.6f} {y_center:.6f} {width:.6f} {height:.6f}\n")
+    while ok:
+        ok, frames = load_frames(cap)
+        y_boxes = detect_frames(model, frames)
+        trackers, t_boxes = track_frames(frames, trackers)
+        trackers, t_boxes = repair_frames(frames, t_boxes, y_boxes)
+        frames, boxes = prune_frames(frames, t_boxes, y_boxes)
+        save_frames(frames, boxes)
 
-    # Optional: visualize tracking
-    for box in boxes:
-        x, y, bw, bh = [int(v) for v in box]
-        cv2.rectangle(frame, (x, y), (x + bw, y + bh), (0, 255, 0), 2)
-    cv2.imshow("Tracking", frame)
-    if cv2.waitKey(1) & 0xFF == ord("q"):
-        break
 
-    frame_idx += 1
 
-cap.release()
-cv2.destroyAllWindows()
+
+   
+
+

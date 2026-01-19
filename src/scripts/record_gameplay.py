@@ -5,7 +5,7 @@ import time
 import numpy as np
 
 FPS = 30
-DURATION_SEC = 5  # set None for infinite
+DURATION_SEC = 5  
 VIDEO_PATH = "/Users/anishganti/runescape_mini_vla/data/objects/mines/lumbridge/mining.mp4"
 
 def get_window():
@@ -16,7 +16,6 @@ def get_window():
 
 def get_window_info(win):
     return {"left": win.left, "top": win.top, "width": win.width, "height": win.height}
-
 
 def record():
     win = get_window()
