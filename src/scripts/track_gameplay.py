@@ -65,15 +65,88 @@ def track_frames(frames, trackers, idx=0):
 
     return trackers, t_boxes
 
-def calc_box_diff(t_box, y_box, threshold=5): 
-    diff = sum(abs(t_box[i] - y_box[i]) for i in range(4))
-    return diff > threshold
+def get_coord(box, form):
+    x,y,w,h = box[0], box[1], box[2], box[3]
+    if form == "YOLO":
+        x1 = int(x - w / 2)
+        y1 = int(y - h / 2)
+        x2 = int(x + w / 2)
+        y2 = int(y + h / 2)
+    else: 
+        x1 = int(x)
+        y1 = int(y)
+        x2 = int(x + w)
+        y2 = int(y + h)
+    return x1,y1,x2,y2
+
+def iou(box_a, box_b):
+    ax1, ay1, ax2, ay2 = box_a[0], box_a[1], box_a[2], box_a[3]
+    bx1, by1, bx2, by2 = box_b[0], box_b[1], box_b[2], box_b[3]
+
+    x_left = max(ax1, bx1)
+    y_top = max(ay1, by1)
+    x_right = min(ax2, bx2)
+    y_bottom = min(ay2, by2)
+
+    inter_width = max(0, x_right - x_left)
+    inter_height = max(0, y_bottom - y_top)
+    inter_area = inter_width * inter_height
+
+    area_a = (ax2 - ax1) * (ay2 - ay1)
+    area_b = (bx2 - bx1) * (by2 - by1)
+    union_area = area_a + area_b - inter_area
+
+    iou_value = inter_area / union_area if union_area > 0 else 0
+    return iou_value
+
+def greedy_match(tracker_boxes, yolo_boxes, iou_threshold=0.7):
+    # Convert boxes to xyxy
+    tracker_xyxy = [get_coord(b, "Tracker") for b in tracker_boxes]
+    yolo_xyxy = [get_coord(b, "YOLO") for b in yolo_boxes]
+
+    # IoU matrix
+    iou_matrix = np.zeros((len(tracker_xyxy), len(yolo_xyxy)))
+    for i, t_box in enumerate(tracker_xyxy):
+        for j, y_box in enumerate(yolo_xyxy):
+            iou_matrix[i, j] = iou(t_box, y_box)
+
+    matched_tracker = []
+    matched_yolo = []
+    unmatched_tracker = set(range(len(tracker_xyxy)))
+    unmatched_yolo = set(range(len(yolo_xyxy)))
+
+    # Greedy matching
+    while iou_matrix.size > 0:
+        max_idx = np.unravel_index(np.argmax(iou_matrix), iou_matrix.shape)
+        i, j = max_idx
+        if iou_matrix[i, j] < iou_threshold:
+            break  # no matches above threshold
+
+        # Add match
+        matched_tracker.append(tracker_boxes[i])
+        matched_yolo.append(yolo_boxes[j])
+        unmatched_tracker.discard(i)
+        unmatched_yolo.discard(j)
+
+        # Remove matched row and column
+        iou_matrix = np.delete(iou_matrix, i, axis=0)
+        iou_matrix = np.delete(iou_matrix, j, axis=1)
+
+        # Adjust indices for remaining unmatched sets
+        unmatched_tracker = {idx if idx < i else idx-1 for idx in unmatched_tracker}
+        unmatched_yolo = {idx if idx < j else idx-1 for idx in unmatched_yolo}
+
+    # Collect unmatched boxes
+    unmatched_tracker_boxes = [tracker_boxes[i] for i in unmatched_tracker]
+    unmatched_yolo_boxes = [yolo_boxes[j] for j in unmatched_yolo]
+
+    return len(unmatched_tracker) + len(unmatched_yolo_boxes) > 0
 
 def compare_bounding_boxes(t_boxes, y_boxes):
     statuses = []
 
     for t_box, y_box in zip(t_boxes, y_boxes): 
-        if len(t_box) != len(y_box) or calc_box_diff(t_box, y_box): 
+        if len(t_box) != len(y_box) or not greedy_match(t_box, y_box): 
             statuses.append(False)
         else: 
             statuses.append(True)
@@ -100,9 +173,10 @@ def validate_frames(statuses):
 
     return failed_frame_id
 
-def repair_frames(frames, t_boxes, y_boxes):
+def repair_frames(frames, trackers, t_boxes, y_boxes):
     while True: 
         statuses = compare_bounding_boxes(t_boxes, y_boxes)
+        print(statuses)
         fail_idx = validate_frames(statuses)
 
         if fail_idx is None: 
@@ -110,9 +184,9 @@ def repair_frames(frames, t_boxes, y_boxes):
 
         trackers = track_frames(frames, None, fail_idx)   
 
-def calc_frame_diff(frame1, frame2): 
-    mean_diff = np.mean(np.abs(frame1 - frame2))
-    return mean_diff < threshold
+def calc_frame_diff(frame1, frame2, threshold=.2): 
+    diff = np.mean(np.abs(frame1.astype(float) - frame2.astype(float)) / 255)
+    return diff > threshold
 
 def prune_frames(frames, t_boxes): 
     idx = 0
@@ -126,8 +200,13 @@ def prune_frames(frames, t_boxes):
 
         idx+=1
 
-def save_frames(frames, boxes):
-    pass
+def save_frames(frames, bboxes):
+    for idx, (frame, bbox) in enumerate(zip(frames, bboxes)):
+        cv2.imwrite(f"/Users/anishganti/runescape_mini_vla/data/mines/lumbridge/images/{idx}.png", frame)
+
+        with open(f"/Users/anishganti/runescape_mini_vla/data/mines/lumbridge/labels/{idx}.txt", "w") as f:
+            for box in bbox:
+                f.write(" ".join(map(str, box)) + "\n")
 
 def annotate_frame(frame):
     bboxes = []
@@ -152,12 +231,9 @@ def start_tracking(frame):
     trackers = create_tracker(frame, bboxes)
     return bboxes, trackers
 
-def draw_xywh(frame, boxes, color, thickness=2):
+def draw_xywh(frame, boxes, form, color, thickness=2):
     for x, y, w, h in boxes:
-        x1 = int(x - w / 2)
-        y1 = int(y - h / 2)
-        x2 = int(x + w / 2)
-        y2 = int(y + h / 2)
+        x1, y1, x2, y2 = get_coord(box, form)
         cv2.rectangle(frame, (x1, y1), (x2, y2), color, thickness)
 
 def replay_video(frames, boxes_a, boxes_b, fps=30):
@@ -167,9 +243,9 @@ def replay_video(frames, boxes_a, boxes_b, fps=30):
         vis = frame.copy()
 
         if i < len(boxes_a):
-            draw_xywh(vis, boxes_a[i], color=(0, 255, 0))  # green
+            draw_xywh(vis, boxes_a[i], 'YOLO', color=(0, 255, 0))  # green
         if i < len(boxes_b):
-            draw_xywh(vis, boxes_b[i], color=(0, 0, 255))  # red
+            draw_xywh(vis, boxes_b[i], 'Tracker', color=(0, 0, 255))  # red
 
         cv2.imshow("Replay", vis)
         if cv2.waitKey(delay) & 0xFF == 27:  # ESC
@@ -187,12 +263,10 @@ def track_pipeline():
         ok, frames = load_frames(cap)
         y_boxes = detect_frames(model, frames)
         trackers, t_boxes = track_frames(frames, trackers)
-        print(len(t_boxes))
-        print(len(y_boxes))
-        replay_video(frames, y_boxes, t_boxes)
-        #trackers, t_boxes = repair_frames(frames, t_boxes, y_boxes)
-        #frames, boxes = prune_frames(frames, t_boxes)
-        #save_frames(frames, boxes)
+        #replay_video(frames, y_boxes, t_boxes)
+        trackers, t_boxes = repair_frames(frames, trackers, t_boxes, y_boxes)
+        frames, boxes = prune_frames(frames, t_boxes)
+        save_frames(frames, boxes)
 
 track_pipeline()
 
