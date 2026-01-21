@@ -1,5 +1,4 @@
 .venv
 data/
-runs/
-yolov8n.pt
 src/scripts/runescape-wiki-crawler/runescape-wiki-crawler/target
+src/pipeline/__pycache__
