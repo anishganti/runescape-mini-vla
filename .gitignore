@@ -1,4 +1,5 @@
 .venv
 data/
-src/scripts/runescape-wiki-crawler/runescape-wiki-crawler/target
 src/pipeline/__pycache__
+src/pipeline/collection/runescape-wiki-crawler/runescape-wiki-crawler/target
+logs/
