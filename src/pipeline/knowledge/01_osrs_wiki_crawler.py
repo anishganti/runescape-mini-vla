@@ -14,7 +14,7 @@ ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
 ch.setFormatter(console_fmt)
 
-fh = RotatingFileHandler("scraper.log", maxBytes=5*1024*1024, backupCount=2)
+fh = RotatingFileHandler("knowledge.log", maxBytes=5*1024*1024, backupCount=2)
 fh.setLevel(logging.DEBUG)
 fh.setFormatter(file_fmt)
 
