@@ -1,5 +1,7 @@
 .venv
 data/
+metadata/
+evals/
 src/pipeline/__pycache__
 src/pipeline/collection/runescape-wiki-crawler/runescape-wiki-crawler/target
 logs/

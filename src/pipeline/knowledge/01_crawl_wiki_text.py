@@ -1,6 +1,8 @@
 import requests
+import argparse
 import time
 import os
+import json
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -22,8 +24,35 @@ logger.addHandler(ch)
 logger.addHandler(fh)
 
 WIKI_API = "https://oldschool.runescape.wiki/api.php"
+PRICES_API = 'https://chisel.weirdgloop.org/gazproj/gazbot/os_dump.json'
+OUTPUT_DIR = '/Users/anishganti/runescape_mini_vla/data/knowledge/02_processed'
 HEADERS = {"User-Agent": "LLM_Project_Scraper/1.0 (contact: anishgantis@utexs.edu)"}
 
+
+def call_prices_api():
+    try:
+        resp = requests.get(PRICES_API, timeout=10)
+        if resp.status_code == 200:
+            return resp.json()
+        logger.warning(f"API returned status {resp.status_code}")
+    except Exception as e:
+        logger.error(f"Request failed: {str(e)}")
+    return None
+
+def format_prices(prices): 
+    formatted_prices = {}
+
+    for item_id, item in prices.items():
+        if item_id == "%UPDATE_DETECTED%":
+            break
+        name = item["name"]
+        formatted_prices[name] = item
+
+    return formatted_prices
+    
+def save_prices(prices): 
+    with open(OUTPUT_DIR+'/prices.json', "w") as f:
+        json.dump(prices, f, indent=2)
 
 def call_api(params):
     params.update({"format": "json", "maxlag": 5})
@@ -92,7 +121,14 @@ def save_to_disk(title, content):
     with open(f"wiki_data/{safe_title}.txt", "w", encoding="utf-8") as f:
         f.write(content)
 
-def run_pipeline():
+def prices_pipeline(): 
+    logger.info("Initializing OSRS Prices Fetch...")    
+    prices = call_prices_api()
+    prices = format_prices(prices)
+    save_prices(prices)
+    logger.info("Prices fetch complete.")
+
+def wikitext_pipeline():
     continue_token = None
     total_scraped_session = 0
     
@@ -122,5 +158,23 @@ def run_pipeline():
     except KeyboardInterrupt:
         logger.info(f"Paused. Total pages this session: {total_scraped_session}. Checkpoint saved.")
 
+def main():
+    parser = argparse.ArgumentParser(description="A simple program with a positional argument.")
+    parser.add_argument('pipeline', help="The pipeline to be run") 
+
+    args = parser.parse_args()
+
+    if not args.pipeline:
+        print("No argument provided")
+        return
+    
+    if args.pipeline == 'prices':
+        prices_pipeline()
+    elif args.pipeline == 'wikitext':
+        wikitext_pipeline()
+    else: 
+        print("Invalid argument provided.")
+
 if __name__ == "__main__":
-    run_pipeline()
+    main()
+    
